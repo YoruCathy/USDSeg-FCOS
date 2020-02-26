@@ -19,6 +19,13 @@ except ImportError:
     albumentations = None
     Compose = None
 
+import cv2 as cv
+import json
+import numpy as np
+from PIL import Image
+import os
+import pickle
+
 
 @PIPELINES.register_module
 class Resize(object):
@@ -874,3 +881,54 @@ class Albu(object):
         repr_str = self.__class__.__name__
         repr_str += '(transformations={})'.format(self.transformations)
         return repr_str
+
+
+@PIPELINES.register_module
+class GenerateCoef(object):
+    def __init__(self, base_root=None, new_bbox=True, scale=64):
+        self.dico = pickle.load(base_root)
+        self.new_bbox = new_bbox
+        self.scale = scale
+
+    @staticmethod
+    def getBoundingBox(mask):
+        coords = np.transpose(np.nonzero(mask))
+        y, x, h, w = cv.boundingRect(coords)
+        return x, y, w, h
+
+    def __call__(self, results):
+        scale = self.scale
+        if 'gt_masks' in results:
+            if self.new_bbox:
+                new_gt_bboxes = []
+            resized_gt_masks = []
+            coef_gt = []
+            for mask, bbox in zip(results['gt_masks'], results['gt_bboxes']):
+                if self.new_bbox:
+                    xx, yy, ww, hh = self.getBoundingBox(mask)
+                    new_bbox = [xx, yy, ww+xx, hh+yy]
+                else:
+                    x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
+                    assert(x1 <= x2)
+                    assert(y1 <= y2)
+                    xx = x1
+                    yy = y1
+                    ww = x2-x1
+                    hh = y2-y1
+                resized_mask = mask[yy:yy+hh,
+                                    xx:xx+ww].astype(np.bool) * 255
+                resized_mask = Image.fromarray(resized_mask.astype(
+                    np.uint8)).resize((scale, scale), Image.NEAREST)
+                resized_mask = np.reshape(resized_mask, (-1, scale*scale))
+                coef = self.dico.transform(mask)
+                if self.new_bbox:
+                    new_gt_bboxes.append(new_bbox)
+                resized_gt_masks.append(resized_mask)
+                coef_gt.append(coef)
+            if self.new_bbox:
+                results['gt_bboxes'] = np.stack(new_gt_bboxes)
+            results['gt_resized_masks'] = np.stack(resized_mask)
+            results['gt_coefs'] = np.stack(coef_gt)
+            return results
+        else:
+            raise(NotImplementedError)
