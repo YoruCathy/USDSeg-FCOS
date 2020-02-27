@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from mmcv.cnn import normal_init
 
-from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms
+from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms_with_mask
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import ConvModule, Scale, bias_init_with_prob
@@ -30,6 +30,11 @@ class USDHead(nn.Module):
                      alpha=0.25,
                      loss_weight=1.0),
                  loss_bbox=dict(type='IoULoss', loss_weight=1.0),
+                 loss_coef=dict(
+                     type='SmoothL1Loss',
+                     beta=1.0,
+                     reduction='mean',
+                     loss_weight=1.0),
                  loss_centerness=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -49,7 +54,7 @@ class USDHead(nn.Module):
         self.regress_ranges = regress_ranges
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
-        self.loss_mask = build_loss(loss_mask)
+        self.loss_coef = build_loss(loss_coef)
         self.loss_centerness = build_loss(loss_centerness)
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
@@ -153,9 +158,9 @@ class USDHead(nn.Module):
              coef_preds,
              gt_bboxes,
              gt_labels,
+             gt_coefs,
              img_metas,
              cfg,
-             gt_coefs,
              gt_bboxes_ignore=None,
              extra_data=None):
         assert len(cls_scores) == len(bbox_preds) == len(
@@ -165,7 +170,7 @@ class USDHead(nn.Module):
                                            bbox_preds[0].device)
 
         labels, bbox_targets, coef_targets = self.usd_target(
-            all_level_points, extra_data)
+            all_level_points, gt_bboxes, gt_labels, gt_coefs)
 
         num_imgs = cls_scores[0].size(0)
         # flatten cls_scores, bbox_preds and centerness
@@ -228,7 +233,7 @@ class USDHead(nn.Module):
             loss_coef = self.loss_coef(pos_coef_preds,
                                        pos_coef_targets,
                                        weight=pos_centerness_targets,
-                                       avg_factor=pos_centerness_targets.sum())  # TODO: coef_loss
+                                       avg_factor=pos_centerness_targets.sum())
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
         else:
@@ -246,6 +251,7 @@ class USDHead(nn.Module):
     def get_bboxes(self,
                    cls_scores,
                    bbox_preds,
+                   coef_preds,
                    centernesses,
                    img_metas,
                    cfg,
@@ -272,8 +278,10 @@ class USDHead(nn.Module):
             ]
             img_shape = img_metas[img_id]['img_shape']
             scale_factor = img_metas[img_id]['scale_factor']
-            det_bboxes = self.get_bboxes_single(cls_score_list, bbox_pred_list,
-                                                coef_pred_list, centerness_pred_list,
+            det_bboxes = self.get_bboxes_single(cls_score_list,
+                                                bbox_pred_list,
+                                                coef_pred_list,
+                                                centerness_pred_list,
                                                 mlvl_points, img_shape,
                                                 scale_factor, cfg, rescale)
             result_list.append(det_bboxes)
@@ -295,10 +303,11 @@ class USDHead(nn.Module):
         mlvl_coefs = []
         mlvl_centerness = []
         for cls_score, bbox_pred, coef_pred, centerness, points in zip(
-                cls_scores, bbox_preds, centernesses, mlvl_points):
+                cls_scores, bbox_preds, coef_preds, centernesses, mlvl_points):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
+
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
             coef_pred = coef_pred.permute(1, 2, 0).reshape(-1, self.num_bases)
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
@@ -312,61 +321,31 @@ class USDHead(nn.Module):
                 scores = scores[topk_inds, :]
                 centerness = centerness[topk_inds]
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
-            # masks= #TODO:coef2mask
+            coefs = coef_pred  # TODO
             mlvl_bboxes.append(bboxes)
             mlvl_scores.append(scores)
             mlvl_centerness.append(centerness)
-            mlvl_masks.append(masks)
+            mlvl_coefs.append(coefs)
+
         mlvl_bboxes = torch.cat(mlvl_bboxes)
-        mlvl_masks = torch.cat(mlvl_masks)
+        mlvl_coefs = torch.cat(mlvl_coefs)
         if rescale:
             mlvl_bboxes /= mlvl_bboxes.new_tensor(scale_factor)
-            try:
-                scale_factor = torch.Tensor(scale_factor)[
-                    :2].cuda().unsqueeze(1).repeat(1, 36)
-                _mlvl_masks = mlvl_masks / scale_factor
-            except:
-                _mlvl_masks = mlvl_masks / mlvl_masks.new_tensor(scale_factor)
-
+            # TODO: Resize mask
         mlvl_scores = torch.cat(mlvl_scores)
         padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
         mlvl_scores = torch.cat([padding, mlvl_scores], dim=1)
         mlvl_centerness = torch.cat(mlvl_centerness)
-        det_bboxes, det_labels = multiclass_nms(
+        det_bboxes, det_labels, det_coefs = multiclass_nms_with_mask(
             mlvl_bboxes,
             mlvl_scores,
+            mlvl_coefs,
             cfg.score_thr,
             cfg.nms,
             cfg.max_per_img,
-            score_factors=mlvl_centerness)
-        return det_bboxes, det_labels
-        # PolarMask
-        # centerness_factor = 0.5  # mask centerness is smaller than origin centerness, so add a constant is important or the score will be too low.
-        # if self.mask_nms:
-        #     '''1 mask->min_bbox->nms, performance same to origin box'''
-        #     a = _mlvl_masks
-        #     _mlvl_bboxes = torch.stack([a[:, 0].min(1)[0],a[:, 1].min(1)[0],a[:, 0].max(1)[0],a[:, 1].max(1)[0]],-1)
-        #     det_bboxes, det_labels, det_masks = multiclass_nms_with_mask(
-        #         _mlvl_bboxes,
-        #         mlvl_scores,
-        #         _mlvl_masks,
-        #         cfg.score_thr,
-        #         cfg.nms,
-        #         cfg.max_per_img,
-        #         score_factors=mlvl_centerness + centerness_factor)
-
-        # else:
-        #     '''2 origin bbox->nms, performance same to mask->min_bbox'''
-        #     det_bboxes, det_labels, det_masks = multiclass_nms_with_mask(
-        #         _mlvl_bboxes,
-        #         mlvl_scores,
-        #         _mlvl_masks,
-        #         cfg.score_thr,
-        #         cfg.nms,
-        #         cfg.max_per_img,
-        #         score_factors=mlvl_centerness + centerness_factor)
-
-        # return det_bboxes, det_labels, det_masks
+            score_factors=mlvl_centerness,
+            num_bases=self.num_bases)
+        return det_bboxes, det_labels, det_coefs
 
     def get_points(self, featmap_sizes, dtype, device):
         """Get points according to feature map sizes.
@@ -397,8 +376,7 @@ class USDHead(nn.Module):
             (x.reshape(-1), y.reshape(-1)), dim=-1) + stride // 2
         return points
 
-    def usd_target(self, points, gt_bboxes_list, gt_labels_list):
-        # TODO
+    def usd_target(self, points, gt_bboxes_list, gt_labels_list, gt_coefs_list):
         assert len(points) == len(self.regress_ranges)
         num_levels = len(points)
         # expand regress ranges to align with points
@@ -410,10 +388,11 @@ class USDHead(nn.Module):
         concat_regress_ranges = torch.cat(expanded_regress_ranges, dim=0)
         concat_points = torch.cat(points, dim=0)
         # get labels and bbox_targets of each image
-        labels_list, bbox_targets_list = multi_apply(
+        labels_list, bbox_targets_list, coef_targets_list = multi_apply(
             self.usd_target_single,
             gt_bboxes_list,
             gt_labels_list,
+            gt_coefs_list,
             points=concat_points,
             regress_ranges=concat_regress_ranges)
 
@@ -424,33 +403,44 @@ class USDHead(nn.Module):
             bbox_targets.split(num_points, 0)
             for bbox_targets in bbox_targets_list
         ]
+        coef_targets_list = [
+            coef_targets.split(num_points, 0)
+            for coef_targets in coef_targets_list
+        ]
 
         # concat per level image
         concat_lvl_labels = []
         concat_lvl_bbox_targets = []
+        concat_lvl_coef_targets = []
         for i in range(num_levels):
             concat_lvl_labels.append(
                 torch.cat([labels[i] for labels in labels_list]))
             concat_lvl_bbox_targets.append(
                 torch.cat(
                     [bbox_targets[i] for bbox_targets in bbox_targets_list]))
-        return concat_lvl_labels, concat_lvl_bbox_targets
+            concat_lvl_coef_targets.append(
+                torch.cat(
+                    [coef_targets[i] for coef_targets in coef_targets_list]))
+        return concat_lvl_labels, concat_lvl_bbox_targets, concat_lvl_coef_targets
 
-    def usd_target_single(self, gt_bboxes, gt_labels, points, regress_ranges):
+    def usd_target_single(self, gt_bboxes, gt_labels, gt_coefs, points, regress_ranges):
         num_points = points.size(0)
         num_gts = gt_labels.size(0)
         if num_gts == 0:
             return gt_labels.new_zeros(num_points), \
-                gt_bboxes.new_zeros((num_points, 4))
+                gt_bboxes.new_zeros((num_points, 4)), \
+                gt_labels.new_zeros((num_points, self.num_bases))
 
         areas = (gt_bboxes[:, 2] - gt_bboxes[:, 0] + 1) * (
-            gt_bboxes[:, 3] - gt_bboxes[:, 1] + 1)
+            gt_bboxes[:, 3] - gt_bboxes[:, 1] + 1)  # gt_bboxes: [..., x1 y1 x2 y2]
         # TODO: figure out why these two are different
         # areas = areas[None].expand(num_points, num_gts)
         areas = areas[None].repeat(num_points, 1)
+
         regress_ranges = regress_ranges[:, None, :].expand(
             num_points, num_gts, 2)
         gt_bboxes = gt_bboxes[None].expand(num_points, num_gts, 4)
+        #xs ys is the coord of x, y of points
         xs, ys = points[:, 0], points[:, 1]
         xs = xs[:, None].expand(num_points, num_gts)
         ys = ys[:, None].expand(num_points, num_gts)
@@ -460,6 +450,12 @@ class USDHead(nn.Module):
         top = ys - gt_bboxes[..., 1]
         bottom = gt_bboxes[..., 3] - ys
         bbox_targets = torch.stack((left, top, right, bottom), -1)
+
+        # Magic
+        # assign gt_coefs to different layers according to regress_range and center?
+        coefs = torch.Tensor(gt_coefs).float()
+        coefs = coefs[None].expand(num_points, num_gts, self.num_bases)
+
 
         # condition1: inside a gt bbox
         inside_gt_bbox_mask = bbox_targets.min(-1)[0] > 0
@@ -480,7 +476,22 @@ class USDHead(nn.Module):
         labels[min_area == INF] = 0
         bbox_targets = bbox_targets[range(num_points), min_area_inds]
 
-        return labels, bbox_targets
+        # USD-Seg
+        pos_inds = labels.nonzero().reshape(-1)
+        m = []
+        for p in range(num_points):
+            if p not in pos_inds:  # Add anything
+                tmp = torch.zeros(self.num_bases)
+                m.append(tmp)
+            else:
+                pos_coef_id = min_area_inds[p]
+                pos_coef = gt_coefs[pos_coef_id]
+                # Add coef
+                m.append(pos_coef)
+
+        coef_targets = torch.stack(m, 0).float()
+
+        return labels, bbox_targets, coef_targets
 
     def centerness_target(self, pos_bbox_targets):
         # only calculate pos centerness targets, otherwise there may be nan
