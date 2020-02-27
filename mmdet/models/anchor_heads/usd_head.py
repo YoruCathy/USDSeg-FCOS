@@ -12,13 +12,10 @@ INF = 1e8
 
 @HEADS.register_module
 class USDHead(nn.Module):
-    """
-    """
 
     def __init__(self,
                  num_classes,
                  in_channels,
-                 num_basis=32,
                  feat_channels=256,
                  stacked_convs=4,
                  strides=(4, 8, 16, 32, 64),
@@ -38,7 +35,9 @@ class USDHead(nn.Module):
                      use_sigmoid=True,
                      loss_weight=1.0),
                  conv_cfg=None,
-                 norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)):
+                 norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
+                 num_bases=32,
+                 ):
         super(USDHead, self).__init__()
 
         self.num_classes = num_classes
@@ -55,9 +54,11 @@ class USDHead(nn.Module):
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.fp16_enabled = False
-        self.num_basis = num_basis
-        # self.use_dcn=use_dcn
-        self.mask_nms = mask_nms
+
+        # USD-Seg
+        self.num_bases = num_bases
+        # self.use_dcn=use_dcn  # TODO: Add DCN support
+        # self.mask_nms = mask_nms  # TODO: 
 
         self._init_layers()
 
@@ -97,16 +98,13 @@ class USDHead(nn.Module):
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
                     bias=self.norm_cfg is None))
-        self.usd_cls = nn.Conv2d(
-            self.feat_channels, self.cls_out_channels, 3, padding=1)
+        self.usd_cls = nn.Conv2d(self.feat_channels, self.cls_out_channels, 3, padding=1)
         self.usd_reg = nn.Conv2d(self.feat_channels, 4, 3, padding=1)
-        self.usd_coef = nn.Conv2d(
-            self.feat_channels, self.num_basis, 3, padding=1)
+        self.usd_coef = nn.Conv2d(self.feat_channels, self.num_bases, 3, padding=1)
         self.usd_centerness = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
 
-        # self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
         self.scales_bbox = nn.ModuleList([Scale(1.0) for _ in self.strides])
-        self.scales_coef = nn.ModuleList([Scale(1, 0) for _ in self.strides])
+        self.scales_coef = nn.ModuleList([Scale(1.0) for _ in self.strides])
 
     def init_weights(self):
         for m in self.cls_convs:
@@ -122,7 +120,6 @@ class USDHead(nn.Module):
         normal_init(self.usd_centerness, std=0.01)
 
     def forward(self, feats):
-        # return multi_apply(self.forward_single, feats, self.scales)
         return multi_apply(self.forward_single, feats, self.scales_bbox, self.scales_coef)
 
     def forward_single(self, x, scale_boxx, scale_coef):
@@ -143,7 +140,7 @@ class USDHead(nn.Module):
 
         for coef_layer in self.coef_convs:
             coef_feat = coef_layer(coef_feat)
-        coef_pred = scale_coef(self.usd_reg(reg_feat)).float().exp()
+        coef_pred = scale_coef(self.usd_coef(coef_feat)).float().exp()
         return cls_score, bbox_pred, centerness, coef_pred
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'coef_preds', 'centernesses'))
@@ -158,15 +155,14 @@ class USDHead(nn.Module):
              cfg,
              gt_coefs,
              gt_bboxes_ignore=None,
-             extra_data=None）:
-        assert len(cls_scores) == len(bbox_preds) == len(
-            centernesses) == len(coef_preds)
+             extra_data=None):
+        assert len(cls_scores) == len(bbox_preds) == len(centernesses) == len(coef_preds)
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         all_level_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                            bbox_preds[0].device)
-        labels, bbox_targets, coef_targets=self.usd_target(
-            all_level_points, extra_data)
-        # TODO:check target
+                                           
+        labels, bbox_targets, coef_targets=self.usd_target(all_level_points, extra_data)
+
         num_imgs=cls_scores[0].size(0)
         # flatten cls_scores, bbox_preds and centerness
         flatten_cls_scores=[
@@ -185,18 +181,21 @@ class USDHead(nn.Module):
             coef_pred.permute(0, 2, 3, 1).reshape(-1)
             for coef_pred in coef_preds
         ]
-        flatten_cls_scores=torch.cat(flatten_cls_scores)
-        flatten_bbox_preds=torch.cat(flatten_bbox_preds)
-        flatten_coef_preds=torch.cat(flatten_coef_preds)
-        flatten_centerness=torch.cat(flatten_centerness)
-        flatten_labels=torch.cat(labels)
-        flatten_bbox_targets=torch.cat(bbox_targets)
+        flatten_cls_scores = torch.cat(flatten_cls_scores)  # [num_pixel, 80]
+        flatten_bbox_preds = torch.cat(flatten_bbox_preds)  # [num_pixel, 4]
+        flatten_coef_preds = torch.cat(flatten_coef_preds)  # [num_pixel, num_bases]
+        flatten_centerness = torch.cat(flatten_centerness)  # [num_pixel]
+
+        flatten_labels = torch.cat(labels)                  # [num_pixel]
+        flatten_bbox_targets = torch.cat(bbox_targets)      # [num_pixel, 4]
+        flatten_coef_targets = torch.cat(coef_targets)      # [num_pixel, num_bases]
         # repeat points to align with bbox_preds
         flatten_points=torch.cat(
-            [points.repeat(num_imgs, 1) for points in all_level_points])
+            [points.repeat(num_imgs, 1) for points in all_level_points])    # [num_pixel,2]
 
         pos_idx=flatten_labels.nonzero().reshape(-1)
         num_pos=len(pos_idx)
+
         loss_cls=self.loss_cls(
             flatten_cls_scores, flatten_labels,
             avg_factor=num_pos + num_imgs)  # avoid num_pos is 0
@@ -220,18 +219,21 @@ class USDHead(nn.Module):
                 pos_decoded_target_preds,
                 weight=pos_centerness_targets,
                 avg_factor=pos_centerness_targets.sum())
-            loss_mask = self.loss_mask(  # TODO:mask_loss)
+            loss_coef = self.loss_coef(pos_coef_preds, 
+                                       pos_coef_targets,
+                                       weight=pos_centerness_targets,
+                                       avg_factor=pos_centerness_targets.sum())  # TODO: coef_loss
             loss_centerness=self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
         else:
             loss_bbox=pos_bbox_preds.sum()
-            loss_mask=loss_mask.sum()
+            loss_coef=loss_coef.sum()
             loss_centerness=pos_centerness.sum()
 
         return dict(
             loss_cls=loss_cls,
             loss_bbox=loss_bbox,
-            loss_mask=loss_mask,
+            loss_coef=loss_coef,
             loss_centerness=loss_centerness)
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
@@ -292,7 +294,7 @@ class USDHead(nn.Module):
             scores=cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
             centerness=centerness.permute(1, 2, 0).reshape(-1).sigmoid()
-            coef_pred=coef_pred.permute(1, 2, 0).reshape(-1, self.num_basis)
+            coef_pred=coef_pred.permute(1, 2, 0).reshape(-1, self.num_bases)
             bbox_pred=bbox_pred.permute(1, 2, 0).reshape(-1, 4)
             nms_pre=cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
@@ -390,6 +392,7 @@ class USDHead(nn.Module):
         return points
 
     def usd_target(self, points, gt_bboxes_list, gt_labels_list):
+        # TODO
         assert len(points) == len(self.regress_ranges)
         num_levels=len(points)
         # expand regress ranges to align with points
