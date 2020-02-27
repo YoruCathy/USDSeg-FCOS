@@ -63,7 +63,6 @@ class USDHead(nn.Module):
         # USD-Seg
         self.num_bases = num_bases
         # self.use_dcn=use_dcn  # TODO: Add DCN support
-        # self.mask_nms = mask_nms  # TODO:
 
         self._init_layers()
 
@@ -321,7 +320,7 @@ class USDHead(nn.Module):
                 scores = scores[topk_inds, :]
                 centerness = centerness[topk_inds]
             bboxes = distance2bbox(points, bbox_pred, max_shape=img_shape)
-            coefs = coef_pred  # TODO
+            coefs = coef_pred
             mlvl_bboxes.append(bboxes)
             mlvl_scores.append(scores)
             mlvl_centerness.append(centerness)
@@ -331,7 +330,6 @@ class USDHead(nn.Module):
         mlvl_coefs = torch.cat(mlvl_coefs)
         if rescale:
             mlvl_bboxes /= mlvl_bboxes.new_tensor(scale_factor)
-            # TODO: Resize mask
         mlvl_scores = torch.cat(mlvl_scores)
         padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
         mlvl_scores = torch.cat([padding, mlvl_scores], dim=1)

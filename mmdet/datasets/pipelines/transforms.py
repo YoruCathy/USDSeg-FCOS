@@ -27,6 +27,8 @@ import os
 import pickle
 import sklearn
 
+from .coefs import x_mean_32_np, sqrt_var_32_np
+
 
 @PIPELINES.register_module
 class Resize(object):
@@ -919,11 +921,12 @@ class GenerateCoef(object):
                 x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
                 assert(x1 <= x2 and y1 <= y2)
 
-            resized_mask = mask[y1:y2, x1:x2].astype(np.bool)
-            resized_mask = cv.resize(resized_mask.astype(np.uint8), (scale, scale))  # unique should be (0, 1) here
+            resized_mask = mask[y1:y2, x1:x2].astype(np.bool) * 255
+            resized_mask = cv.resize(resized_mask.astype(np.uint8), (scale, scale), interpolation=cv.INTER_NEAREST)  # unique should be (0, 255) here
             resized_mask = np.reshape(resized_mask, (1, scale*scale))
 
             coef = self.dico.transform(mask)
+            coef = (coef - x_mean_32_np) / sqrt_var_32_np
 
             resized_gt_masks.append(resized_mask)
             coef_gt.append(coef)
