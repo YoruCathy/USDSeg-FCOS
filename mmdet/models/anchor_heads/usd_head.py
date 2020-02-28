@@ -186,7 +186,7 @@ class USDHead(nn.Module):
             for centerness in centernesses
         ]
         flatten_coef_preds = [
-            coef_pred.permute(0, 2, 3, 1).reshape(-1)
+            coef_pred.permute(0, 2, 3, 1).reshape(-1, self.num_bases)
             for coef_pred in coef_preds
         ]
         flatten_cls_scores = torch.cat(flatten_cls_scores)  # [num_pixel, 80]
@@ -229,15 +229,19 @@ class USDHead(nn.Module):
                 pos_decoded_target_preds,
                 weight=pos_centerness_targets,
                 avg_factor=pos_centerness_targets.sum())
+
+            # Change the weights of different coefs
+            coef_weights = pos_centerness_targets.expand((self.num_bases,
+                                                          pos_centerness_targets.size(0))).transpose(1, 0)
             loss_coef = self.loss_coef(pos_coef_preds,
                                        pos_coef_targets,
-                                       weight=pos_centerness_targets,
+                                       weight=coef_weights,
                                        avg_factor=pos_centerness_targets.sum())
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
         else:
             loss_bbox = pos_bbox_preds.sum()
-            loss_coef = loss_coef.sum()
+            loss_coef = pos_coef_preds.sum()
             loss_centerness = pos_centerness.sum()
 
         return dict(
@@ -451,8 +455,8 @@ class USDHead(nn.Module):
 
         # Magic
         # assign gt_coefs to different layers according to regress_range and center?
-        coefs = torch.Tensor(gt_coefs).float()
-        coefs = coefs[None].expand(num_points, num_gts, self.num_bases)
+        # coefs = torch.tensor(gt_coefs).float()
+        # coefs = coefs[None].expand(num_points, num_gts, self.num_bases)
 
         # condition1: inside a gt bbox
         inside_gt_bbox_mask = bbox_targets.min(-1)[0] > 0
@@ -475,18 +479,11 @@ class USDHead(nn.Module):
 
         # USD-Seg
         pos_inds = labels.nonzero().reshape(-1)
-        m = []
-        for p in range(num_points):
-            if p not in pos_inds:  # Add anything
-                tmp = torch.zeros(self.num_bases)
-                m.append(tmp)
-            else:
-                pos_coef_id = min_area_inds[p]
-                pos_coef = gt_coefs[pos_coef_id]
-                # Add coef
-                m.append(pos_coef)
-
-        coef_targets = torch.stack(m, 0).float()
+        coef_targets = torch.zeros((num_points, self.num_bases), device=gt_coefs.device)
+        for p in pos_inds:
+            pos_coef_id = min_area_inds[p]
+            pos_coef = gt_coefs[pos_coef_id]
+            coef_targets[p] = pos_coef
 
         return labels, bbox_targets, coef_targets
 

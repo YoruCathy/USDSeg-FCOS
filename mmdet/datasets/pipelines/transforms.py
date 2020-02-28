@@ -888,7 +888,7 @@ class Albu(object):
 
 @PIPELINES.register_module
 class GenerateCoef(object):
-    def __init__(self, base_root, use_mask_bbox=True, scale=64):
+    def __init__(self, base_root, use_mask_bbox=False, scale=64):
         if sklearn.__version__ != '0.21.3':
             raise RuntimeError('sklearn version 0.21.3 is required. However get %s' % sklearn.___version__)
         with open(base_root, 'rb') as dico_file:
@@ -914,26 +914,27 @@ class GenerateCoef(object):
         for mask, bbox in zip(results['gt_masks'], results['gt_bboxes']):
             if self.use_mask_bbox:
                 x1, y1, w, h = self.get_bbox(mask)
-                x2 = x1 + w
-                y2 = y1 + w
+                x2 = x1 + w  # TODO
+                y2 = y1 + h
                 new_bbox = [x1, y1, x2, y2]
                 new_gt_bboxes.append(new_bbox)
             else:
-                x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+                x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2])+1, int(bbox[3])+1  # hot fix
                 assert(x1 <= x2 and y1 <= y2)
 
             resized_mask = mask[y1:y2, x1:x2].astype(np.bool) * 255
             resized_mask = cv.resize(resized_mask.astype(np.uint8), (scale, scale), interpolation=cv.INTER_NEAREST)  # unique should be (0, 255) here
             resized_mask = np.reshape(resized_mask, (1, scale*scale))
 
-            coef = self.dico.transform(resized_mask)
+            coef = self.dico.transform(resized_mask)  # TODO: Catch these warnings
             coef = (coef - x_mean_32_np) / sqrt_var_32_np
 
             resized_gt_masks.append(resized_mask)
-            coef_gt.append(coef)
+            assert coef.shape[0] == 1
+            coef_gt.append(coef[0])
 
-        if self.use_mask_bbox:
-            results['gt_bboxes'] = np.stack(new_gt_bboxes)
+        # if self.use_mask_bbox:
+        #     results['gt_bboxes'] = np.stack(new_gt_bboxes)
         results['gt_resized_masks'] = np.stack(resized_gt_masks)  # (0, 1) - Bool Mask
         results['gt_coefs'] = np.stack(coef_gt)
         return results
