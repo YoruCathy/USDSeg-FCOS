@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 from mmcv.cnn import normal_init
-
-from mmdet.core import distance2bbox, force_fp32, multi_apply, multiclass_nms_with_mask
+from mmdet.core.post_processing.bbox_nms import multiclass_nms_with_mask
+from mmdet.core import distance2bbox, force_fp32, multi_apply
 from ..builder import build_loss
 from ..registry import HEADS
 from ..utils import ConvModule, Scale, bias_init_with_prob
@@ -438,7 +438,7 @@ class USDHead(nn.Module):
         regress_ranges = regress_ranges[:, None, :].expand(
             num_points, num_gts, 2)
         gt_bboxes = gt_bboxes[None].expand(num_points, num_gts, 4)
-        #xs ys is the coord of x, y of points
+        # xs ys is the coord of x, y of points
         xs, ys = points[:, 0], points[:, 1]
         xs = xs[:, None].expand(num_points, num_gts)
         ys = ys[:, None].expand(num_points, num_gts)
@@ -453,7 +453,6 @@ class USDHead(nn.Module):
         # assign gt_coefs to different layers according to regress_range and center?
         coefs = torch.Tensor(gt_coefs).float()
         coefs = coefs[None].expand(num_points, num_gts, self.num_bases)
-
 
         # condition1: inside a gt bbox
         inside_gt_bbox_mask = bbox_targets.min(-1)[0] > 0

@@ -23,7 +23,7 @@ class USDSeg(SingleStageDetector):
                  pretrained=None,
                  bases_path=None):
         super(USDSeg, self).__init__(backbone, neck, bbox_head, train_cfg,
-                                   test_cfg, pretrained, bases_path)
+                                     test_cfg, pretrained)
 
         if bases_path == None:
             raise RuntimeWarning('bases_path not defined!')
@@ -35,17 +35,16 @@ class USDSeg(SingleStageDetector):
                       img_metas,
                       gt_bboxes,
                       gt_labels,
-                      gt_coefs=None,
+                      gt_coefs,
                       gt_bboxes_ignore=None,
                       ):
 
         x = self.extract_feat(img)
         outs = self.bbox_head(x)
-        loss_inputs = outs + (gt_bboxes, gt_labels, img_metas, self.train_cfg)
+        loss_inputs = outs + (gt_bboxes, gt_labels, gt_coefs, img_metas, self.train_cfg)
 
         losses = self.bbox_head.loss(
             *loss_inputs,
-            gt_coefs = gt_coefs,
             gt_bboxes_ignore=gt_bboxes_ignore,
         )
         return losses
@@ -70,5 +69,3 @@ class USDSeg(SingleStageDetector):
         mask_results = results[0][1]
 
         return bbox_results, mask_results
-
-

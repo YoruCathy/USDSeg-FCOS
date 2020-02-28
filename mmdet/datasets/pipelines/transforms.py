@@ -891,7 +891,8 @@ class GenerateCoef(object):
     def __init__(self, base_root, use_mask_bbox=True, scale=64):
         if sklearn.__version__ != '0.21.3':
             raise RuntimeError('sklearn version 0.21.3 is required. However get %s' % sklearn.___version__)
-        self.dico = pickle.load(base_root)
+        with open(base_root, 'rb') as dico_file:
+            self.dico = pickle.load(dico_file)
         self.dico.set_params(n_jobs=None)
 
         self.use_mask_bbox = use_mask_bbox
@@ -925,7 +926,7 @@ class GenerateCoef(object):
             resized_mask = cv.resize(resized_mask.astype(np.uint8), (scale, scale), interpolation=cv.INTER_NEAREST)  # unique should be (0, 255) here
             resized_mask = np.reshape(resized_mask, (1, scale*scale))
 
-            coef = self.dico.transform(mask)
+            coef = self.dico.transform(resized_mask)
             coef = (coef - x_mean_32_np) / sqrt_var_32_np
 
             resized_gt_masks.append(resized_mask)

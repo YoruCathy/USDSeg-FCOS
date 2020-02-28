@@ -15,7 +15,7 @@ def to_tensor(data):
     :class:`Sequence`, :class:`int` and :class:`float`.
     """
     if isinstance(data, torch.Tensor):
-        return data data
+        return data
     elif isinstance(data, np.ndarray):
         return torch.from_numpy(data)
     elif isinstance(data, Sequence) and not mmcv.is_str(data):
@@ -123,7 +123,7 @@ class DefaultFormatBundle(object):
                 img = np.expand_dims(img, -1)
             img = np.ascontiguousarray(img.transpose(2, 0, 1))
             results['img'] = DC(to_tensor(img), stack=True)
-        for key in ['proposals', 'gt_bboxes', 'gt_bboxes_ignore', 'gt_labels', 'gt_resized_masks', 'gt_coefs']:
+        for key in ['proposals', 'gt_bboxes', 'gt_bboxes_ignore', 'gt_labels', 'gt_coefs']:  # 'gt_resized_masks', 
             if key not in results:
                 continue
             results[key] = DC(to_tensor(results[key]))
