@@ -12,7 +12,7 @@ model = dict(
     bbox_head=dict(
         type='YoloHead',
         in_channels=[256, 512, 1024],
-        num_classes=21,
+        num_classes=81,
         input_size=input_size,
         anchors=[[10,13],[16,30],[33,23],[30,61],[62,45],[59,119],[116,90],[156,198],[373,326]],
         target_means=[0., 0., 0., 0.],
@@ -83,7 +83,7 @@ test_pipeline = [
 ]
 data = dict(
     imgs_per_gpu=16, 
-    workers_per_gpu=16,
+    workers_per_gpu=4,
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_train2017.json',
