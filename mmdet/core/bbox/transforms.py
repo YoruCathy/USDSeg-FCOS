@@ -242,24 +242,23 @@ def bbox_mask2result(bboxes, coefs, labels, num_classes, img_meta, bases, mean, 
 
     mask_results = [[] for _ in range(num_classes - 1)]
 
-    bases = bases.to(coefs.device).detach()  # TODO @tutian: Check performance issue
+    bases = bases.to(coefs.device).detach().float()  # TODO @tutian: Check performance issue
     coefs = coefs * var + mean
     masks = torch.mm(coefs, bases).cpu().numpy()
 
     for label, mask, bbox in zip(labels, masks, bboxes):
         im_mask = np.zeros((img_h, img_w), dtype=np.uint8)
 
-        x1, x2, y1, y2, _ = (int(_x) for _x in bbox)
-        resized = cv2.resize(mask, (x2-x1, y2-y1))
+        x1, y1, x2, y2, _ = (int(_x) for _x in bbox)
+        resized = cv2.resize(mask, (x2-x1+1, y2-y1+1))
         resized = (resized > 127) * 255
 
-        im_mask[y1:y2, x1:x2] = resized
+        im_mask[y1:y2+1, x1:x2+1] = resized
 
         rle = mask_util.encode(
             np.array(im_mask[:, :, np.newaxis], order='F'))[0]
 
         mask_results[label].append(rle)
-
 
     if bboxes.shape[0] == 0:
         bbox_results = [

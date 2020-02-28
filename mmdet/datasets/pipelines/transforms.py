@@ -902,19 +902,19 @@ class GenerateCoef(object):
     def get_bbox(mask):
         coords = np.transpose(np.nonzero(mask))
         y, x, h, w = cv.boundingRect(coords)
-        return x, y, w, h
+        return x, y, w+1, h+1
 
     def __call__(self, results):
         scale = self.scale
         if 'gt_masks' not in results:
-            raise RuntimeError('gt_masks is missing')
+            raise RuntimeError('`gt_masks` is missing')
         new_gt_bboxes = []
         resized_gt_masks = []
         coef_gt = []
         for mask, bbox in zip(results['gt_masks'], results['gt_bboxes']):
             if self.use_mask_bbox:
                 x1, y1, w, h = self.get_bbox(mask)
-                x2 = x1 + w  # TODO
+                x2 = x1 + w
                 y2 = y1 + h
                 new_bbox = [x1, y1, x2, y2]
                 new_gt_bboxes.append(new_bbox)
@@ -923,18 +923,19 @@ class GenerateCoef(object):
                 assert(x1 <= x2 and y1 <= y2)
 
             resized_mask = mask[y1:y2, x1:x2].astype(np.bool) * 255
-            resized_mask = cv.resize(resized_mask.astype(np.uint8), (scale, scale), interpolation=cv.INTER_NEAREST)  # unique should be (0, 255) here
+            resized_mask = cv.resize(resized_mask.astype(np.uint8), (scale, scale), interpolation=cv.INTER_NEAREST)
             resized_mask = np.reshape(resized_mask, (1, scale*scale))
 
             coef = self.dico.transform(resized_mask)  # TODO: Catch these warnings
+            # TODO: Send bool values directly. No need to * 255
             coef = (coef - x_mean_32_np) / sqrt_var_32_np
 
-            resized_gt_masks.append(resized_mask)
+            resized_gt_masks.append(resized_mask.astype(np.bool))
             assert coef.shape[0] == 1
             coef_gt.append(coef[0])
 
-        # if self.use_mask_bbox:
-        #     results['gt_bboxes'] = np.stack(new_gt_bboxes)
-        results['gt_resized_masks'] = np.stack(resized_gt_masks)  # (0, 1) - Bool Mask
+        if self.use_mask_bbox:
+            results['gt_bboxes'] = np.stack(new_gt_bboxes)
+        results['gt_resized_masks'] = np.stack(resized_gt_masks)  # should be {0, 1} Bool Mask
         results['gt_coefs'] = np.stack(coef_gt)
         return results

@@ -254,8 +254,8 @@ class USDHead(nn.Module):
     def get_bboxes(self,
                    cls_scores,
                    bbox_preds,
-                   coef_preds,
                    centernesses,
+                   coef_preds,
                    img_metas,
                    cfg,
                    rescale=None):

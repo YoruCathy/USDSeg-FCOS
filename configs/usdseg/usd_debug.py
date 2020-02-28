@@ -67,7 +67,7 @@ train_pipeline = [
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
     dict(type='GenerateCoef', base_root='/home/tutian/dataset/coco_usd_seg/coco_all_32_1.sklearnmodel',
-         use_mask_bbox=False, scale=64),
+         use_mask_bbox=True, scale=64),
     dict(type='DefaultFormatBundle'),
     dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_coefs']),
 ]

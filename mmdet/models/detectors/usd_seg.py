@@ -57,8 +57,8 @@ class USDSeg(SingleStageDetector):
         bbox_list = self.bbox_head.get_bboxes(*bbox_inputs)
 
         from mmdet.datasets.pipelines.coefs import x_mean_32, sqrt_var_32
-        x_mean_32 = x_mean_32.to(bbox_inputs.device)
-        sqrt_var_32 = sqrt_var_32.to(bbox_inputs.device)
+        x_mean_32 = x_mean_32.to(bbox_list[0][2].device).float()
+        sqrt_var_32 = sqrt_var_32.to(bbox_list[0][2].device).float()
 
         results = [
             bbox_mask2result(det_bboxes, det_coefs, det_labels, self.bbox_head.num_classes, img_meta[0],
