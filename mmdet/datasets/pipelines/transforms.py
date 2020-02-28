@@ -890,7 +890,7 @@ class Albu(object):
 class GenerateCoef(object):
     def __init__(self, base_root, use_mask_bbox=False, scale=64):
         if sklearn.__version__ != '0.21.3':
-            raise RuntimeError('sklearn version 0.21.3 is required. However get %s' % sklearn.___version__)
+            raise RuntimeError('sklearn version 0.21.3 is required. However get %s' % sklearn.__version__)
         with open(base_root, 'rb') as dico_file:
             self.dico = pickle.load(dico_file)
         self.dico.set_params(n_jobs=None)
