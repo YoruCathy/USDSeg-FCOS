@@ -146,7 +146,7 @@ class USDHead(nn.Module):
 
         for coef_layer in self.coef_convs:
             coef_feat = coef_layer(coef_feat)
-        coef_pred = scale_coef(self.usd_coef(coef_feat)).float().exp()
+        coef_pred = scale_coef(self.usd_coef(coef_feat)).float()
         return cls_score, bbox_pred, centerness, coef_pred
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'coef_preds', 'centernesses'))
