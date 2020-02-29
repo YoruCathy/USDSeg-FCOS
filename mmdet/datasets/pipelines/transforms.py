@@ -936,7 +936,8 @@ class GenerateCoef(object):
             if self.method == 'var':
                 coef = (coef - x_mean_32_np) / sqrt_var_32_np
             if self.method == 'cosine':
-                coef[0] -= -39.4114  # Extracted from coco dataset
+                # coef[0] -= -39.4114  # Extracted from coco dataset
+                coef[0] /= 3.0
 
             resized_gt_masks.append(resized_mask.astype(np.bool))
             assert coef.shape[0] == self.num_bases
