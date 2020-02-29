@@ -258,7 +258,7 @@ def bbox_mask2result(bboxes, coefs, labels, num_classes, img_meta, bases, method
         if method == 'var':
             resized = (resized > 127.5) * 255
         elif method == 'cosine':
-            resized = (resized > 0.5) * 255
+            resized = (resized > ((resized.max() + resized.min()) / 2)) * 255
 
         im_mask[y1:y2+1, x1:x2+1] = resized.astype(np.uint8)
 
