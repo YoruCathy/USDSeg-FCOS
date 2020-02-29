@@ -26,7 +26,7 @@ class USDSeg(SingleStageDetector):
         super(USDSeg, self).__init__(backbone, neck, bbox_head, train_cfg,
                                      test_cfg, pretrained)
 
-        if bases_path == None:
+        if bases_path is None:
             raise RuntimeWarning('bases_path not defined!')
         else:
             self.bases = torch.tensor(np.load(bases_path))
