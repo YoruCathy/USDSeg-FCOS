@@ -3,6 +3,7 @@ model = dict(
     type='USDSeg',
     pretrained='open-mmlab://resnet50_caffe',
     bases_path='/home/tutian/dataset/coco_usd_seg/coco_all_32_1.npy',
+    method='var',
     backbone=dict(
         type='ResNet',
         depth=50,
@@ -36,7 +37,8 @@ model = dict(
         loss_bbox=dict(type='IoULoss', loss_weight=1.0),
         loss_coef=dict(type='SmoothL1Loss', loss_weight=1.0),
         loss_centerness=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)))
+            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        method='var'))
 # training and testing settings
 train_cfg = dict(
     assigner=dict(
@@ -67,7 +69,7 @@ train_pipeline = [
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
     dict(type='GenerateCoef', base_root='/home/tutian/dataset/coco_usd_seg/coco_all_32_1.sklearnmodel',
-         use_mask_bbox=True, scale=64),
+         use_mask_bbox=True, scale=64, method='var', num_bases=32),
     dict(type='DefaultFormatBundle'),
     dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_coefs']),
 ]
@@ -104,7 +106,7 @@ data = dict(
         ann_file=data_root + 'annotations/instances_val2017.json',
         img_prefix=data_root + 'val2017/',
         pipeline=test_pipeline))
-evaluation = dict(interval=1, metric='bbox',)
+evaluation = dict(interval=1, metric=['bbox', 'segm'],)
 # optimizer
 optimizer = dict(
     type='SGD',
@@ -133,7 +135,7 @@ log_config = dict(
 total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
-work_dir = './work_dirs/fcos_r50_usd'
+work_dir = './work_dirs/usd_debug'
 load_from = None
 resume_from = None
 workflow = [('train', 1)]

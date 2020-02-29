@@ -888,7 +888,7 @@ class Albu(object):
 
 @PIPELINES.register_module
 class GenerateCoef(object):
-    def __init__(self, base_root, use_mask_bbox=False, scale=64):
+    def __init__(self, base_root, use_mask_bbox=False, scale=64, method='None', num_bases=-1):
         if sklearn.__version__ != '0.21.3':
             raise RuntimeError('sklearn version 0.21.3 is required. However get %s' % sklearn.__version__)
         with open(base_root, 'rb') as dico_file:
@@ -897,6 +897,10 @@ class GenerateCoef(object):
 
         self.use_mask_bbox = use_mask_bbox
         self.scale = scale
+        if method not in ['var', 'cosine']:
+            raise NotImplementedError('%s not supported.' % method)
+        self.method = method
+        self.num_bases = num_bases
 
     @staticmethod
     def get_bbox(mask):
@@ -922,17 +926,21 @@ class GenerateCoef(object):
                 x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2])+1, int(bbox[3])+1  # hot fix
                 assert(x1 <= x2 and y1 <= y2)
 
-            resized_mask = mask[y1:y2, x1:x2].astype(np.bool) * 255
-            resized_mask = cv.resize(resized_mask.astype(np.uint8), (scale, scale), interpolation=cv.INTER_NEAREST)
+            resized_mask = mask[y1:y2, x1:x2].astype(np.uint8)  # {0, 1}
+            if self.method == 'var':
+                resized_mask *= 255
+            resized_mask = cv.resize(resized_mask, (scale, scale), interpolation=cv.INTER_NEAREST)
             resized_mask = np.reshape(resized_mask, (1, scale*scale))
 
-            coef = self.dico.transform(resized_mask)  # TODO: Catch these warnings
-            # TODO: Send bool values directly. No need to * 255
-            coef = (coef - x_mean_32_np) / sqrt_var_32_np
+            coef = self.dico.transform(resized_mask)[0]  # TODO: Catch these warnings
+            if self.method == 'var':
+                coef = (coef - x_mean_32_np) / sqrt_var_32_np
+            if self.method == 'cosine':
+                coef[0] -= -39.4114  # Extracted from coco dataset
 
             resized_gt_masks.append(resized_mask.astype(np.bool))
-            assert coef.shape[0] == 1
-            coef_gt.append(coef[0])
+            assert coef.shape[0] == self.num_bases
+            coef_gt.append(coef)
 
         if self.use_mask_bbox:
             results['gt_bboxes'] = np.stack(new_gt_bboxes)

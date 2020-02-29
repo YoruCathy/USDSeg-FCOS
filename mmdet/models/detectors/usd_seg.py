@@ -21,7 +21,8 @@ class USDSeg(SingleStageDetector):
                  train_cfg=None,
                  test_cfg=None,
                  pretrained=None,
-                 bases_path=None):
+                 bases_path=None,
+                 method='None'):
         super(USDSeg, self).__init__(backbone, neck, bbox_head, train_cfg,
                                      test_cfg, pretrained)
 
@@ -29,6 +30,11 @@ class USDSeg(SingleStageDetector):
             raise RuntimeWarning('bases_path not defined!')
         else:
             self.bases = torch.tensor(np.load(bases_path))
+            self.num_bases = len(self.bases)
+
+        if method not in ['var', 'cosine']:
+            raise NotImplementedError('%s not supported.' % method)
+        self.method = method
 
     def forward_train(self,
                       img,
@@ -56,14 +62,21 @@ class USDSeg(SingleStageDetector):
         bbox_inputs = outs + (img_meta, self.test_cfg, rescale)
         bbox_list = self.bbox_head.get_bboxes(*bbox_inputs)
 
-        from mmdet.datasets.pipelines.coefs import x_mean_32, sqrt_var_32
-        x_mean_32 = x_mean_32.to(bbox_list[0][2].device).float()
-        sqrt_var_32 = sqrt_var_32.to(bbox_list[0][2].device).float()
+        if self.method == 'var':
+            from mmdet.datasets.pipelines.coefs import x_mean_32, sqrt_var_32
+            x_mean_32 = x_mean_32.to(bbox_list[0][2].device).float()
+            sqrt_var_32 = sqrt_var_32.to(bbox_list[0][2].device).float()
 
-        results = [
-            bbox_mask2result(det_bboxes, det_coefs, det_labels, self.bbox_head.num_classes, img_meta[0],
-                             self.bases, x_mean_32, sqrt_var_32)
-            for det_bboxes, det_labels, det_coefs in bbox_list]
+            results = [
+                bbox_mask2result(det_bboxes, det_coefs, det_labels, self.bbox_head.num_classes, img_meta[0],
+                                 self.bases, self.method, x_mean_32, sqrt_var_32)
+                for det_bboxes, det_labels, det_coefs in bbox_list]
+
+        elif self.method == 'cosine':
+            results = [
+                bbox_mask2result(det_bboxes, det_coefs, det_labels, self.bbox_head.num_classes, img_meta[0],
+                                 self.bases, self.method)
+                for det_bboxes, det_labels, det_coefs in bbox_list]
 
         bbox_results = results[0][0]
         mask_results = results[0][1]

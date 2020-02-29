@@ -42,6 +42,7 @@ class USDHead(nn.Module):
                  conv_cfg=None,
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
                  num_bases=32,
+                 method='None'
                  ):
         super(USDHead, self).__init__()
 
@@ -63,6 +64,9 @@ class USDHead(nn.Module):
         # USD-Seg
         self.num_bases = num_bases
         # self.use_dcn=use_dcn  # TODO: Add DCN support
+        if method not in ['var', 'cosine']:
+            raise NotImplementedError('%s not supported.' % method)
+        self.method = method
 
         self._init_layers()
 
@@ -230,13 +234,20 @@ class USDHead(nn.Module):
                 weight=pos_centerness_targets,
                 avg_factor=pos_centerness_targets.sum())
 
-            # Change the weights of different coefs
-            coef_weights = pos_centerness_targets.expand((self.num_bases,
-                                                          pos_centerness_targets.size(0))).transpose(1, 0)
-            loss_coef = self.loss_coef(pos_coef_preds,
-                                       pos_coef_targets,
-                                       weight=coef_weights,
-                                       avg_factor=pos_centerness_targets.sum())
+            if self.method == 'var':
+                # Change the weights of different coefs
+                coef_weights = pos_centerness_targets.expand((self.num_bases,
+                                                              pos_centerness_targets.size(0))).transpose(1, 0)
+                loss_coef = self.loss_coef(pos_coef_preds,
+                                           pos_coef_targets,
+                                           weight=coef_weights,
+                                           avg_factor=pos_centerness_targets.sum())
+            elif self.method == 'cosine':
+                loss_coef = self.loss_coef(pos_coef_preds,
+                                           pos_coef_targets,
+                                           weight=pos_centerness_targets,
+                                           avg_factor=pos_centerness_targets.sum())
+
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
         else:
