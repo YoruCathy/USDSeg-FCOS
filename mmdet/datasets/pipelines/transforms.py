@@ -926,18 +926,24 @@ class GenerateCoef(object):
                 x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2])+1, int(bbox[3])+1  # hot fix
                 assert(x1 <= x2 and y1 <= y2)
 
-            resized_mask = mask[y1:y2, x1:x2].astype(np.uint8)  # {0, 1}
+            obj_mask = mask[y1:y2, x1:x2].astype(np.uint8)  # {0, 1}
+
+            # resized_mask = cv.resize(resized_mask, (scale, scale), interpolation=cv.INTER_NEAREST)
+            resized_mask = Image.fromarray(obj_mask).resize((scale, scale), Image.NEAREST)
+            resized_mask = np.reshape(resized_mask, (1, scale*scale))
+
             if self.method == 'var':
                 resized_mask *= 255
-            resized_mask = cv.resize(resized_mask, (scale, scale), interpolation=cv.INTER_NEAREST)
-            resized_mask = np.reshape(resized_mask, (1, scale*scale))
+            elif self.method == 'cosine':
+                resized_mask = resized_mask.astype(np.int) * 2 - 1  # {-1, 1}
 
             coef = self.dico.transform(resized_mask)[0]  # TODO: Catch these warnings
             if self.method == 'var':
                 coef = (coef - x_mean_32_np) / sqrt_var_32_np
             if self.method == 'cosine':
                 # coef[0] -= -39.4114  # Extracted from coco dataset
-                coef[0] /= 3.0
+                # coef[0] /= 3.0
+                pass
 
             resized_gt_masks.append(resized_mask.astype(np.bool))
             assert coef.shape[0] == self.num_bases

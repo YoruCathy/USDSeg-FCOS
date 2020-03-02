@@ -242,12 +242,11 @@ def bbox_mask2result(bboxes, coefs, labels, num_classes, img_meta, bases, method
 
     mask_results = [[] for _ in range(num_classes - 1)]
 
-    bases = bases.to(coefs.device).float()  # TODO @tutian: Check performance issue
-
     if method == 'var':
         coefs = coefs * var + mean
     elif method == 'cosine':
-        coefs[:, 0] *= 3
+        # coefs[:, 0] *= 3
+        pass
     masks = torch.mm(coefs, bases).cpu().numpy().reshape((-1, 64, 64))
 
     for label, mask, bbox in zip(labels, masks, bboxes):
@@ -258,7 +257,7 @@ def bbox_mask2result(bboxes, coefs, labels, num_classes, img_meta, bases, method
         if method == 'var':
             resized = (resized > 127.5) * 255
         elif method == 'cosine':
-            resized = (resized > ((resized.max() + resized.min()) / 2)) * 255
+            resized = (resized > 0) * 255
 
         im_mask[y1:y2+1, x1:x2+1] = resized.astype(np.uint8)
 

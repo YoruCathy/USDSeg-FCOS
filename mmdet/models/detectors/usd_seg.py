@@ -29,7 +29,8 @@ class USDSeg(SingleStageDetector):
         if bases_path is None:
             raise RuntimeWarning('bases_path not defined!')
         else:
-            self.bases = torch.tensor(np.load(bases_path))
+            self.bases = torch.tensor(np.load(bases_path)).pin_memory()
+            self.bases_copied = False
             self.num_bases = len(self.bases)
 
         if method not in ['var', 'cosine']:
@@ -61,6 +62,10 @@ class USDSeg(SingleStageDetector):
 
         bbox_inputs = outs + (img_meta, self.test_cfg, rescale)
         bbox_list = self.bbox_head.get_bboxes(*bbox_inputs)
+
+        if not self.bases_copied:
+            self.bases = self.bases.to(img.device).float()
+            self.bases_copied = True
 
         if self.method == 'var':
             from mmdet.datasets.pipelines.coefs import x_mean_32, sqrt_var_32

@@ -2,7 +2,7 @@
 model = dict(
     type='USDSeg',
     pretrained='open-mmlab://resnet50_caffe',
-    bases_path='/home/tutian/dataset/coco_usd_seg/coco_all_32_1.npy',
+    bases_path='/home/tutian/dataset/coco_usd_seg/new_32_1.npy',
     method='cosine',
     backbone=dict(
         type='ResNet',
@@ -68,7 +68,7 @@ train_pipeline = [
     dict(type='RandomFlip', flip_ratio=0.5),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
-    dict(type='GenerateCoef', base_root='/home/tutian/dataset/coco_usd_seg/coco_all_32_1.sklearnmodel',
+    dict(type='GenerateCoef', base_root='/home/tutian/dataset/coco_usd_seg/new_32_1.sklearnmodel',
          use_mask_bbox=True, scale=64, method='cosine', num_bases=32),
     dict(type='DefaultFormatBundle'),
     dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_coefs']),
@@ -135,7 +135,7 @@ log_config = dict(
 total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
-work_dir = './work_dirs/usd_r50_cosine_old_dict_0_mean'
+work_dir = './work_dirs/usd_r50_cosine_new_dict'
 load_from = None
 resume_from = None
 workflow = [('train', 1)]
