@@ -33,7 +33,7 @@ class USDSeg(SingleStageDetector):
             self.bases_copied = False
             self.num_bases = len(self.bases)
 
-        if method not in ['var', 'cosine']:
+        if method not in ['var', 'cosine', 'cosine_r']:
             raise NotImplementedError('%s not supported.' % method)
         self.method = method
 
@@ -77,7 +77,7 @@ class USDSeg(SingleStageDetector):
                                  self.bases, self.method, x_mean_32, sqrt_var_32)
                 for det_bboxes, det_labels, det_coefs in bbox_list]
 
-        elif self.method == 'cosine':
+        elif self.method == 'cosine' or self.method == 'cosine_r':
             results = [
                 bbox_mask2result(det_bboxes, det_coefs, det_labels, self.bbox_head.num_classes, img_meta[0],
                                  self.bases, self.method)

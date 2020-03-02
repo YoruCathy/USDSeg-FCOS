@@ -897,7 +897,7 @@ class GenerateCoef(object):
 
         self.use_mask_bbox = use_mask_bbox
         self.scale = scale
-        if method not in ['var', 'cosine']:
+        if method not in ['var', 'cosine', 'cosine_r']:
             raise NotImplementedError('%s not supported.' % method)
         self.method = method
         self.num_bases = num_bases
@@ -934,16 +934,14 @@ class GenerateCoef(object):
 
             if self.method == 'var':
                 resized_mask *= 255
-            elif self.method == 'cosine':
+            elif self.method == 'cosine' or self.method == 'cosine_r':
                 resized_mask = resized_mask.astype(np.int) * 2 - 1  # {-1, 1}
 
             coef = self.dico.transform(resized_mask)[0]  # TODO: Catch these warnings
             if self.method == 'var':
                 coef = (coef - x_mean_32_np) / sqrt_var_32_np
-            if self.method == 'cosine':
-                # coef[0] -= -39.4114  # Extracted from coco dataset
-                # coef[0] /= 3.0
-                pass
+            if self.method == 'cosine_r':
+                coef[0:2] /= 10
 
             resized_gt_masks.append(resized_mask.astype(np.bool))
             assert coef.shape[0] == self.num_bases
