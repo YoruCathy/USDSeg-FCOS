@@ -22,7 +22,8 @@ class USDSeg(SingleStageDetector):
                  test_cfg=None,
                  pretrained=None,
                  bases_path=None,
-                 method='None'):
+                 method='None',
+                 use_mask_loss=False):
         super(USDSeg, self).__init__(backbone, neck, bbox_head, train_cfg,
                                      test_cfg, pretrained)
 
@@ -36,6 +37,7 @@ class USDSeg(SingleStageDetector):
         if method not in ['var', 'cosine', 'cosine_r']:
             raise NotImplementedError('%s not supported.' % method)
         self.method = method
+        self.use_mask_loss = use_mask_loss
 
     def forward_train(self,
                       img,
@@ -44,15 +46,26 @@ class USDSeg(SingleStageDetector):
                       gt_labels,
                       gt_coefs,
                       gt_bboxes_ignore=None,
+                      gt_resized_masks=None,
                       ):
 
         x = self.extract_feat(img)
         outs = self.bbox_head(x)
         loss_inputs = outs + (gt_bboxes, gt_labels, gt_coefs, img_metas, self.train_cfg)
 
+        if self.use_mask_loss:
+            if not self.bases_copied:
+                self.bases = self.bases.to(img.device).float()
+                self.bases_copied = True
+            bases = self.bases
+        else:
+            bases = None
+
         losses = self.bbox_head.loss(
             *loss_inputs,
             gt_bboxes_ignore=gt_bboxes_ignore,
+            bases=bases,
+            gt_resized_masks=gt_resized_masks
         )
         return losses
 

@@ -888,7 +888,8 @@ class Albu(object):
 
 @PIPELINES.register_module
 class GenerateCoef(object):
-    def __init__(self, base_root, use_mask_bbox=False, scale=64, method='None', num_bases=-1):
+    def __init__(self, base_root, use_mask_bbox=False, scale=64, method='None', num_bases=-1,
+                 keep_resized_mask=False, preserve_gt_mask=False):
         if sklearn.__version__ != '0.21.3':
             raise RuntimeError('sklearn version 0.21.3 is required. However get %s' % sklearn.__version__)
         with open(base_root, 'rb') as dico_file:
@@ -901,6 +902,8 @@ class GenerateCoef(object):
             raise NotImplementedError('%s not supported.' % method)
         self.method = method
         self.num_bases = num_bases
+        self.keep_resized_mask = keep_resized_mask
+        self.preserve_gt_mask = preserve_gt_mask
 
     @staticmethod
     def get_bbox(mask):
@@ -941,14 +944,20 @@ class GenerateCoef(object):
             if self.method == 'var':
                 coef = (coef - x_mean_32_np) / sqrt_var_32_np
             if self.method == 'cosine_r':
-                coef[0:2] /= 10
+                coef[0] /= 30.0
+                coef[1] /= 10.0
 
-            resized_gt_masks.append(resized_mask.astype(np.bool))
+            resized_gt_masks.append(resized_mask[0])
             assert coef.shape[0] == self.num_bases
             coef_gt.append(coef)
 
         if self.use_mask_bbox:
             results['gt_bboxes'] = np.stack(new_gt_bboxes)
-        results['gt_resized_masks'] = np.stack(resized_gt_masks)  # should be {0, 1} Bool Mask
+        if self.keep_resized_mask:
+            results['gt_resized_masks'] = np.stack(resized_gt_masks)  # should be {-1, 1} int Mask
+        if not self.preserve_gt_mask:
+            results.pop('gt_masks')  # No longer needed
+
         results['gt_coefs'] = np.stack(coef_gt)
+
         return results

@@ -43,7 +43,8 @@ class USDHead(nn.Module):
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
                  num_bases=32,
                  method='None',
-                 use_center_sample=False
+                 use_center_sample=False,
+                 loss_mask=None,
                  ):
         super(USDHead, self).__init__()
 
@@ -69,6 +70,12 @@ class USDHead(nn.Module):
             raise NotImplementedError('%s not supported.' % method)
         self.method = method
         self.use_center_sample = use_center_sample
+
+        # Mask Loss
+        if loss_mask is None:
+            self.loss_mask = None
+        else:
+            self.loss_mask = build_loss(loss_mask)
 
         self._init_layers()
 
@@ -167,7 +174,9 @@ class USDHead(nn.Module):
              img_metas,
              cfg,
              gt_bboxes_ignore=None,
-             extra_data=None):
+             extra_data=None,
+             bases=None,
+             gt_resized_masks=None):
         assert len(cls_scores) == len(bbox_preds) == len(
             centernesses) == len(coef_preds)
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
@@ -203,8 +212,7 @@ class USDHead(nn.Module):
 
         flatten_labels = torch.cat(labels)                  # [num_pixel]
         flatten_bbox_targets = torch.cat(bbox_targets)      # [num_pixel, 4]
-        flatten_coef_targets = torch.cat(
-            coef_targets)      # [num_pixel, num_bases]
+        flatten_coef_targets = torch.cat(coef_targets)      # [num_pixel, num_bases]
         # repeat points to align with bbox_preds
         flatten_points = torch.cat(
             [points.repeat(num_imgs, 1) for points in all_level_points])    # [num_pixel,2]
@@ -250,6 +258,32 @@ class USDHead(nn.Module):
                                            weight=pos_centerness_targets,
                                            avg_factor=pos_centerness_targets.sum())
 
+            # Mask Loss
+            if bases is not None:
+                mask_targets = torch.cat(gt_resized_masks)
+                coef_targets = torch.cat(gt_coefs).float()
+
+                # Find the targets
+                num_targets = pos_coef_targets.size(0)
+                pos_mask_targets = torch.zeros(num_targets, 64 * 64, device=mask_targets.device)
+                for target_idx in range(num_targets):
+                    current_target_coef = pos_coef_targets[target_idx]
+                    found = False
+                    for gt_coef_idx, gt_coef in enumerate(coef_targets):
+                        if (gt_coef == current_target_coef).sum().item() == self.num_bases:
+                            pos_mask_targets[target_idx] = mask_targets[gt_coef_idx]
+                            found = True
+                            break
+                    assert found
+
+                mask_weights = pos_centerness_targets.expand((64 * 64,
+                                                              pos_centerness_targets.size(0))).transpose(1, 0)
+
+                loss_mask = self.loss_mask(torch.mm(pos_coef_preds, bases).gt(0).float(),
+                                           pos_mask_targets.gt(0).float(),
+                                           weight=mask_weights,
+                                           avg_factor=pos_centerness_targets.sum() * 1024)
+
             loss_centerness = self.loss_centerness(pos_centerness,
                                                    pos_centerness_targets)
         else:
@@ -257,11 +291,19 @@ class USDHead(nn.Module):
             loss_coef = pos_coef_preds.sum()
             loss_centerness = pos_centerness.sum()
 
-        return dict(
-            loss_cls=loss_cls,
-            loss_bbox=loss_bbox,
-            loss_coef=loss_coef,
-            loss_centerness=loss_centerness)
+        if bases is None:
+            return dict(
+                loss_cls=loss_cls,
+                loss_bbox=loss_bbox,
+                loss_coef=loss_coef,
+                loss_centerness=loss_centerness)
+        else:
+            return dict(
+                loss_cls=loss_cls,
+                loss_bbox=loss_bbox,
+                loss_coef=loss_coef,
+                loss_centerness=loss_centerness,
+                loss_mask=loss_mask)
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'centernesses'))
     def get_bboxes(self,

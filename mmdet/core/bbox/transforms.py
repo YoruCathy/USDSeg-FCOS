@@ -245,7 +245,8 @@ def bbox_mask2result(bboxes, coefs, labels, num_classes, img_meta, bases, method
     if method == 'var':
         coefs = coefs * var + mean
     elif method == 'cosine_r':
-        coefs[:, 0:2] *= 10
+        coefs[:, 0] *= 30
+        coefs[:, 1] *= 10
     masks = torch.mm(coefs, bases).cpu().numpy().reshape((-1, 64, 64))
 
     for label, mask, bbox in zip(labels, masks, bboxes):
