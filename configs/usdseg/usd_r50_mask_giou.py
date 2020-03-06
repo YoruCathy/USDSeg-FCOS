@@ -3,7 +3,7 @@ model = dict(
     type='USDSeg',
     pretrained='open-mmlab://resnet50_caffe',
     bases_path='/home/tutian/dataset/coco_usd_seg/new_32_1.npy',
-    method='cosine_r',
+    method='cosine',
     use_mask_loss=True,
     backbone=dict(
         type='ResNet',
@@ -40,7 +40,7 @@ model = dict(
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_mask=dict(type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-        method='cosine_r',
+        method='cosine',
         use_center_sample=True,
     )
 )
@@ -74,7 +74,7 @@ train_pipeline = [
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
     dict(type='GenerateCoef', base_root='/home/tutian/dataset/coco_usd_seg/new_32_1.sklearnmodel',
-         use_mask_bbox=True, scale=64, method='cosine_r', num_bases=32, keep_resized_mask=True),
+         use_mask_bbox=True, scale=64, method='cosine', num_bases=32, keep_resized_mask=True),
     dict(type='DefaultFormatBundle'),
     dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_coefs', 'gt_resized_masks']),
 ]
