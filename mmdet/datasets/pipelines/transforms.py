@@ -888,26 +888,33 @@ class Albu(object):
 
 @PIPELINES.register_module
 class GenerateCoef(object):
-    def __init__(self, base_root, use_mask_bbox=True, scale=64):
+    def __init__(self, base_root, use_mask_bbox=False, scale=64, method='None', num_bases=-1,
+                 keep_resized_mask=False, preserve_gt_mask=False):
         if sklearn.__version__ != '0.21.3':
-            raise RuntimeError('sklearn version 0.21.3 is required. However get %s' % sklearn.___version__)
+            raise RuntimeError('sklearn version 0.21.3 is required. However get %s' % sklearn.__version__)
         with open(base_root, 'rb') as dico_file:
             self.dico = pickle.load(dico_file)
         self.dico.set_params(n_jobs=None)
 
         self.use_mask_bbox = use_mask_bbox
         self.scale = scale
+        if method not in ['var', 'cosine', 'cosine_r']:
+            raise NotImplementedError('%s not supported.' % method)
+        self.method = method
+        self.num_bases = num_bases
+        self.keep_resized_mask = keep_resized_mask
+        self.preserve_gt_mask = preserve_gt_mask
 
     @staticmethod
     def get_bbox(mask):
         coords = np.transpose(np.nonzero(mask))
         y, x, h, w = cv.boundingRect(coords)
-        return x, y, w, h
+        return x, y, w+1, h+1
 
     def __call__(self, results):
         scale = self.scale
         if 'gt_masks' not in results:
-            raise RuntimeError('gt_masks is missing')
+            raise RuntimeError('`gt_masks` is missing')
         new_gt_bboxes = []
         resized_gt_masks = []
         coef_gt = []
@@ -915,25 +922,42 @@ class GenerateCoef(object):
             if self.use_mask_bbox:
                 x1, y1, w, h = self.get_bbox(mask)
                 x2 = x1 + w
-                y2 = y1 + w
+                y2 = y1 + h
                 new_bbox = [x1, y1, x2, y2]
                 new_gt_bboxes.append(new_bbox)
             else:
-                x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+                x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2])+1, int(bbox[3])+1  # hot fix
                 assert(x1 <= x2 and y1 <= y2)
 
-            resized_mask = mask[y1:y2, x1:x2].astype(np.bool) * 255
-            resized_mask = cv.resize(resized_mask.astype(np.uint8), (scale, scale), interpolation=cv.INTER_NEAREST)  # unique should be (0, 255) here
+            obj_mask = mask[y1:y2, x1:x2].astype(np.uint8)  # {0, 1}
+
+            # resized_mask = cv.resize(resized_mask, (scale, scale), interpolation=cv.INTER_NEAREST)
+            resized_mask = Image.fromarray(obj_mask).resize((scale, scale), Image.NEAREST)
             resized_mask = np.reshape(resized_mask, (1, scale*scale))
 
-            coef = self.dico.transform(resized_mask)
-            coef = (coef - x_mean_32_np) / sqrt_var_32_np
+            if self.method == 'var':
+                resized_mask *= 255
+            elif self.method == 'cosine' or self.method == 'cosine_r':
+                resized_mask = resized_mask.astype(np.int) * 2 - 1  # {-1, 1}
 
-            resized_gt_masks.append(resized_mask)
+            coef = self.dico.transform(resized_mask)[0]  # TODO: Catch these warnings
+            if self.method == 'var':
+                coef = (coef - x_mean_32_np) / sqrt_var_32_np
+            if self.method == 'cosine_r':
+                coef[0] /= 30.0
+                coef[1] /= 10.0
+
+            resized_gt_masks.append(resized_mask[0])
+            assert coef.shape[0] == self.num_bases
             coef_gt.append(coef)
 
         if self.use_mask_bbox:
-            results['gt_bboxes'] = np.stack(new_gt_bboxes)
-        results['gt_resized_masks'] = np.stack(resized_gt_masks)  # (0, 1) - Bool Mask
+            results['gt_bboxes'] = np.stack(new_gt_bboxes).astype(np.float32)
+        if self.keep_resized_mask:
+            results['gt_resized_masks'] = np.stack(resized_gt_masks).astype(np.float32)  # should be {-1, 1} int Mask
+        if not self.preserve_gt_mask:
+            results.pop('gt_masks')  # No longer needed
+
         results['gt_coefs'] = np.stack(coef_gt)
+
         return results

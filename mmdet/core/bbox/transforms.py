@@ -113,6 +113,35 @@ def delta2bbox(rois,
     return bboxes
 
 
+def distance2bbox(points, dists, max_shape=None):
+    """Decode distance prediction to bounding box.
+    Args:
+        points (Tensor): Shape (n, 2), [x, y].
+        dists (Tensor): Distance from the given point to 4
+            boundaries (left, top, right, bottom).
+        max_shape (tuple): Shape of the image.
+    Returns:
+        Tensor: Decoded bboxes.
+    """
+    dl = dists[:, 0::4]
+    dt = dists[:, 1::4]
+    dr = dists[:, 2::4]
+    db = dists[:, 3::4]
+    cx = points[:, 0].unsqueeze(1)
+    cy = points[:, 1].unsqueeze(1)
+    x1 = cx - dl
+    y1 = cy - dt
+    x2 = cx + dr
+    y2 = cy + db
+    if max_shape is not None:
+        x1 = x1.clamp(min=0, max=max_shape[1] - 1)
+        y1 = y1.clamp(min=0, max=max_shape[0] - 1)
+        x2 = x2.clamp(min=0, max=max_shape[1] - 1)
+        y2 = y2.clamp(min=0, max=max_shape[0] - 1)
+    bboxes = torch.stack((x1, y1, x2, y2), dim=-1).view_as(dists)
+    return bboxes
+
+
 def bbox_flip(bboxes, img_shape):
     """Flip bboxes horizontally.
 
@@ -225,7 +254,7 @@ def distance2bbox(points, distance, max_shape=None):
     return torch.stack([x1, y1, x2, y2], -1)
 
 
-def bbox_mask2result(bboxes, coefs, labels, num_classes, img_meta, bases, mean, var):
+def bbox_mask2result(bboxes, coefs, labels, num_classes, img_meta, bases, method, mean=None, var=None):
     """Convert detection results to a list of numpy arrays.
 
     Args:
@@ -242,24 +271,29 @@ def bbox_mask2result(bboxes, coefs, labels, num_classes, img_meta, bases, mean, 
 
     mask_results = [[] for _ in range(num_classes - 1)]
 
-    bases = bases.to(coefs.device).detach()  # TODO @tutian: Check performance issue
-    coefs = coefs * var + mean
-    masks = torch.mm(coefs, bases).cpu().numpy()
+    if method == 'var':
+        coefs = coefs * var + mean
+    elif method == 'cosine_r':
+        coefs[:, 0] *= 30
+        coefs[:, 1] *= 10
+    masks = torch.mm(coefs, bases).cpu().numpy().reshape((-1, 64, 64))
 
     for label, mask, bbox in zip(labels, masks, bboxes):
         im_mask = np.zeros((img_h, img_w), dtype=np.uint8)
 
-        x1, x2, y1, y2, _ = (int(_x) for _x in bbox)
-        resized = cv2.resize(mask, (x2-x1, y2-y1))
-        resized = (resized > 127) * 255
+        x1, y1, x2, y2, _ = (int(_x) for _x in bbox)
+        resized = cv2.resize(mask, (x2-x1+1, y2-y1+1))
+        if method == 'var':
+            resized = (resized > 127.5) * 255
+        elif method == 'cosine' or method == 'cosine_r':
+            resized = (resized > 0) * 255
 
-        im_mask[y1:y2, x1:x2] = resized
+        im_mask[y1:y2+1, x1:x2+1] = resized.astype(np.uint8)
 
         rle = mask_util.encode(
             np.array(im_mask[:, :, np.newaxis], order='F'))[0]
 
         mask_results[label].append(rle)
-
 
     if bboxes.shape[0] == 0:
         bbox_results = [
@@ -271,4 +305,3 @@ def bbox_mask2result(bboxes, coefs, labels, num_classes, img_meta, bases, mean, 
         labels = labels.cpu().numpy()
         bbox_results = [bboxes[labels == i, :] for i in range(num_classes - 1)]
         return bbox_results, mask_results
-

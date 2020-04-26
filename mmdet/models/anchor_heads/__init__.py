@@ -12,6 +12,8 @@ from .retina_sepbn_head import RetinaSepBNHead
 from .rpn_head import RPNHead
 from .ssd_head import SSDHead
 from .usd_head import USDHead
+# from .AmodalHead import AmodalHead
+# from .corner_net_head import CornerNetHead
 
 __all__ = [
     'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption', 'RPNHead',
