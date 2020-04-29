@@ -12,6 +12,7 @@ from .base import BaseDetector
 from .test_mixins import RPNTestMixin
 import numpy as np
 
+
 @DETECTORS.register_module
 class Amodal(BaseDetector, RPNTestMixin):
 
@@ -38,16 +39,16 @@ class Amodal(BaseDetector, RPNTestMixin):
         self.num_stages = num_stages
         self.backbone = builder.build_backbone(backbone)
 
-        if bases_path is None:
-            raise RuntimeWarning('bases_path not defined!')
-        else:
-            self.bases = torch.tensor(np.load(bases_path)).pin_memory()
-            self.bases_copied = False
-            self.num_bases = len(self.bases)
-        
+        # if bases_path is None:
+        #     raise RuntimeWarning('bases_path not defined!')
+        # else:
+        #     self.bases = torch.tensor(np.load(bases_path)).pin_memory()
+        #     self.bases_copied = False
+        #     self.num_bases = len(self.bases)
+
         self.method = method
         self.use_mask_loss = use_mask_loss
-        
+
         if neck is not None:
             self.neck = builder.build_neck(neck)
 
@@ -227,27 +228,23 @@ class Amodal(BaseDetector, RPNTestMixin):
             self.current_stage = i
             rcnn_train_cfg = self.train_cfg.rcnn[i]
             lw = self.train_cfg.stage_loss_weights[i]
-            
+
             # assign gts and sample proposals
             sampling_results = []
             if self.with_bbox or self.with_mask:
                 bbox_assigner = build_assigner(rcnn_train_cfg.assigner)
-                # coef_assigner = build_assigner(rcnn_train_cfg.assigner)
                 bbox_sampler = build_sampler(
                     rcnn_train_cfg.sampler, context=self)
-                # coef_sampler = build_sampler(
-                #     rcnn_train_cfg.sampler, context=self)
 
                 num_imgs = img.size(0)
                 if gt_bboxes_ignore is None:
                     gt_bboxes_ignore = [None for _ in range(num_imgs)]
-                gt_coefs_ignore=gt_bboxes_ignore
-                # print(gt_bboxes_ignore)
+                gt_coefs_ignore = gt_bboxes_ignore
                 for j in range(num_imgs):
                     assign_result_bbox = bbox_assigner.assign(
                         proposal_list[j], gt_bboxes[j], gt_bboxes_ignore[j],
                         gt_labels[j])
-                    
+
                     if i != self.num_stages - 1:  # first several stages
                         sampling_result_bbox = bbox_sampler.sample(
                             assign_result_bbox,
@@ -282,12 +279,14 @@ class Amodal(BaseDetector, RPNTestMixin):
                                             rois)
             if self.with_shared_head:
                 bbox_feats = self.shared_head(bbox_feats)
+
             cls_score, bbox_pred, coef_pred = bbox_head(bbox_feats)
 
             bbox_targets = bbox_head.get_target(sampling_results, gt_bboxes, gt_coefs,
                                                 gt_labels, rcnn_train_cfg)
-            loss_bbox = bbox_head.loss(cls_score, bbox_pred, coef_pred, *bbox_targets)
-            for name,value in loss_bbox.items():
+            loss_bbox = bbox_head.loss(
+                cls_score, bbox_pred, coef_pred, *bbox_targets)
+            for name, value in loss_bbox.items():
                 losses['s{}.{}'.format(i, name)] = (
                     value * lw if 'loss' in name else value)
 
@@ -378,7 +377,7 @@ class Amodal(BaseDetector, RPNTestMixin):
             if self.with_shared_head:
                 bbox_feats = self.shared_head(bbox_feats)
 
-            cls_score, bbox_pred = bbox_head(bbox_feats)
+            cls_score, bbox_pred, coef_pred = bbox_head(bbox_feats)
             ms_scores.append(cls_score)
 
             if i < self.num_stages - 1:
@@ -399,43 +398,40 @@ class Amodal(BaseDetector, RPNTestMixin):
                                   self.bbox_head[-1].num_classes)
         ms_bbox_result['ensemble'] = bbox_result
 
-        if self.with_mask:
-            if det_bboxes.shape[0] == 0:
-                mask_classes = self.mask_head[-1].num_classes - 1
-                segm_result = [[] for _ in range(mask_classes)]
-            else:
-                if isinstance(scale_factor, float):  # aspect ratio fixed
-                    _bboxes = (
-                        det_bboxes[:, :4] *
-                        scale_factor if rescale else det_bboxes)
-                else:
-                    _bboxes = (
-                        det_bboxes[:, :4] *
-                        torch.from_numpy(scale_factor).to(det_bboxes.device)
-                        if rescale else det_bboxes)
-
-                mask_rois = bbox2roi([_bboxes])
-                aug_masks = []
-                for i in range(self.num_stages):
-                    mask_roi_extractor = self.mask_roi_extractor[i]
-                    mask_feats = mask_roi_extractor(
-                        x[:len(mask_roi_extractor.featmap_strides)], mask_rois)
-                    if self.with_shared_head:
-                        mask_feats = self.shared_head(mask_feats)
-                    mask_pred = self.mask_head[i](mask_feats)
-                    aug_masks.append(mask_pred.sigmoid().cpu().numpy())
-                merged_masks = merge_aug_masks(aug_masks,
-                                               [img_meta] * self.num_stages,
-                                               self.test_cfg.rcnn)
-                segm_result = self.mask_head[-1].get_seg_masks(
-                    merged_masks, _bboxes, det_labels, rcnn_test_cfg,
-                    ori_shape, scale_factor, rescale)
-            ms_segm_result['ensemble'] = segm_result
-
-        if self.with_mask:
-            results = (ms_bbox_result['ensemble'], ms_segm_result['ensemble'])
+        if det_bboxes.shape[0] == 0:
+            mask_classes = self.mask_head[-1].num_classes - 1
+            segm_result = [[] for _ in range(mask_classes)]
         else:
-            results = ms_bbox_result['ensemble']
+            if isinstance(scale_factor, float):  # aspect ratio fixed
+                _bboxes = (
+                    det_bboxes[:, :4] *
+                    scale_factor if rescale else det_bboxes)
+            else:
+                _bboxes = (
+                    det_bboxes[:, :4] *
+                    torch.from_numpy(scale_factor).to(det_bboxes.device)
+                    if rescale else det_bboxes)
+
+            mask_rois = bbox2roi([_bboxes])
+            aug_masks = []
+            for i in range(self.num_stages):
+                mask_roi_extractor = self.mask_roi_extractor[i]
+                mask_feats = mask_roi_extractor(
+                    x[:len(mask_roi_extractor.featmap_strides)], mask_rois)
+                if self.with_shared_head:
+                    mask_feats = self.shared_head(mask_feats)
+                mask_pred = self.bases.dot(coef_pred)
+                # mask_pred = self.mask_head[i](mask_feats)
+                aug_masks.append(mask_pred.sigmoid().cpu().numpy())
+            merged_masks = merge_aug_masks(aug_masks,
+                                           [img_meta] * self.num_stages,
+                                           self.test_cfg.rcnn)
+            segm_result = self.mask_head[-1].get_seg_masks(
+                merged_masks, _bboxes, det_labels, rcnn_test_cfg,
+                ori_shape, scale_factor, rescale)
+        ms_segm_result['ensemble'] = segm_result
+
+        results = (ms_bbox_result['ensemble'], ms_segm_result['ensemble'])
 
         return results
 

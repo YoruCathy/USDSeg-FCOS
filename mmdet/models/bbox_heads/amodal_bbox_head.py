@@ -54,7 +54,7 @@ class AmodalBBoxHead(nn.Module):
         self.target_stds = target_stds
         self.reg_class_agnostic = reg_class_agnostic
         self.fp16_enabled = False
-        self.num_bases=num_bases
+        self.num_bases = num_bases
 
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
@@ -74,8 +74,8 @@ class AmodalBBoxHead(nn.Module):
             out_dim_reg = 4 if reg_class_agnostic else 4 * num_classes
             self.fc_reg = nn.Linear(in_channels, out_dim_reg)
         if self.with_coef:
-            out_dim_coef=32
-            self.fc_coef=nn.Linear(in_channels,out_dim_coef)
+            out_dim_coef = 32
+            self.fc_coef = nn.Linear(in_channels, out_dim_coef)
         self.debug_imgs = None
 
     def init_weights(self):
@@ -109,13 +109,11 @@ class AmodalBBoxHead(nn.Module):
             pos_gt_coefs = [res.pos_gt_coefs for res in sampling_results]
         if sampling_results[0].pos_coefs is not None:
             pos_coefs = [res.pos_coefs for res in sampling_results]
-            neg_coefs = [res.neg_coefs for res in sampling_results]
         reg_classes = 1 if self.reg_class_agnostic else self.num_classes
         cls_reg_targets = amodal_bbox_target(
             pos_proposals,
             neg_proposals,
             pos_coefs,
-            neg_coefs,
             pos_gt_bboxes,
             pos_gt_labels,
             pos_gt_coefs,
@@ -125,7 +123,7 @@ class AmodalBBoxHead(nn.Module):
             target_stds=self.target_stds)
         return cls_reg_targets
 
-    @force_fp32(apply_to=('cls_score', 'bbox_pred','coef_pred'))
+    @force_fp32(apply_to=('cls_score', 'bbox_pred', 'coef_pred'))
     def loss(self,
              cls_score,
              bbox_pred,
@@ -175,17 +173,17 @@ class AmodalBBoxHead(nn.Module):
             pos_inds = labels > 0
             if pos_inds.any():
                 if self.reg_class_agnostic:
-                    pos_coef_pred = coef_pred.view(coef_pred.size(0), 32)[pos_inds]
+                    pos_coef_pred = coef_pred.view(
+                        coef_pred.size(0), 32)[pos_inds]
                 else:
                     pos_coef_pred = coef_pred.view(coef_pred.size(0), -1,
                                                    32)[pos_inds,
                                                        labels[pos_inds]]
                 if self.loss_coef:
-                    assert(pos_coef_pred.shape == coef_targets[pos_inds].shape)
                     losses['loss_coef'] = self.loss_coef(
                         pos_coef_pred,
-                        coef_targets[pos_inds],
-                        coef_weights[pos_inds, 0])
+                        coef_targets,
+                        coef_targets.new_ones((1,)))
         return losses
 
     @force_fp32(apply_to=('cls_score', 'bbox_pred'))

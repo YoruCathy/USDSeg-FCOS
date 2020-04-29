@@ -56,7 +56,7 @@ model = dict(
                 type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
             loss_bbox=dict(type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
             loss_coef=None,
-            ),
+        ),
         dict(
             type='AmodalBBoxHead',
             with_avg_pool=True,
@@ -70,7 +70,7 @@ model = dict(
                 type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
             loss_bbox=dict(type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
             loss_coef=None,
-            ),
+        ),
         dict(
             type='AmodalBBoxHead',
             with_avg_pool=True,
@@ -84,7 +84,7 @@ model = dict(
                 type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
             loss_bbox=dict(type='SmoothL1Loss', beta=1.0, loss_weight=1.0),
             loss_coef=dict(type='CosineSimilarityLoss', loss_weight=1.0),
-            ),
+        ),
     ])
 # model training and testing settings
 train_cfg = dict(
@@ -151,7 +151,7 @@ train_cfg = dict(
                 neg_iou_thr=0.7,
                 min_pos_iou=0.7,
                 ignore_iof_thr=-1),
-            sampler= dict(
+            sampler=dict(
                 type='RandomSamplerWithCoef',
                 num=512,
                 pos_fraction=0.25,
@@ -179,7 +179,7 @@ img_norm_cfg = dict(
     mean=[102.9801, 115.9465, 122.7717], std=[1.0, 1.0, 1.0], to_rgb=False)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='LoadAnnotations', with_bbox=True,with_mask=True),
+    dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
     dict(type='Resize', img_scale=(1333, 800), keep_ratio=True),
     dict(type='RandomFlip', flip_ratio=0.5),
     dict(type='Normalize', **img_norm_cfg),
@@ -236,7 +236,7 @@ lr_config = dict(
 checkpoint_config = dict(interval=1)
 # yapf:disable
 log_config = dict(
-    interval=1,
+    interval=100,
     hooks=[
         dict(type='TextLoggerHook'),
         # dict(type='TensorboardLoggerHook')
@@ -246,7 +246,7 @@ log_config = dict(
 total_epochs = 12
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
-work_dir = './work_dirs/cascade_rcnn_debug'
+work_dir = './work_dirs/cascade_rcnn_1'
 load_from = None
 resume_from = None
 workflow = [('train', 1)]

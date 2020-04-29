@@ -133,7 +133,6 @@ def _dist_train(model,
         model.cuda(),
         device_ids=[torch.cuda.current_device()],
         broadcast_buffers=False,
-        find_unused_parameters=True  # Hot fix
         )
 
     # build runner

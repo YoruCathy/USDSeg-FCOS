@@ -162,8 +162,7 @@ class SamplingResultWithCoef(SamplingResult):
         self.pos_bboxes = bboxes[pos_inds]
         self.neg_bboxes = bboxes[neg_inds]
 
-        self.pos_coefs = coefs[pos_inds]
-        self.neg_coefs = coefs[neg_inds]
+        self.pos_coefs = coefs
         self.pos_is_gt = gt_flags[pos_inds]
 
         self.num_gts = gt_bboxes.shape[0]
@@ -193,5 +192,4 @@ class SamplingResultWithCoef(SamplingResult):
             self.pos_gt_labels = assign_result.labels[pos_inds]
         else:
             self.pos_gt_labels = None
-
 

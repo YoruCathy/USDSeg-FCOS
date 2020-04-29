@@ -3,6 +3,7 @@ import torch
 from .base_sampler import BaseSampler
 from .sampling_result import SamplingResultWithCoef
 
+
 class RandomSampler(BaseSampler):
 
     def __init__(self,
@@ -97,7 +98,7 @@ class RandomSamplerWithCoef(RandomSampler):
         pos_inds = pos_inds.unique()
         num_sampled_pos = pos_inds.numel()
         num_expected_neg = self.num - num_sampled_pos
-        
+
         if self.neg_pos_ub >= 0:
             _pos = max(1, num_sampled_pos)
             neg_upper_bound = int(self.neg_pos_ub * _pos)
@@ -108,9 +109,9 @@ class RandomSamplerWithCoef(RandomSampler):
         neg_inds = neg_inds.unique()
 
         if coefs is None:
-            coefs = bboxes.new_zeros((bboxes.shape[0], 32))
-            gt_coefs = gt_bboxes.new_zeros((gt_bboxes.shape[0], 32))
+            coefs = bboxes.new_zeros((len(pos_inds), 32))
+            gt_coefs = gt_bboxes.new_zeros((len(pos_inds), 32))
 
         sampling_result = SamplingResultWithCoef(pos_inds, neg_inds, bboxes, gt_bboxes, coefs, gt_coefs,
-                                         assign_result, gt_flags)
+                                                 assign_result, gt_flags)
         return sampling_result

@@ -26,6 +26,8 @@ def bbox2delta(proposals, gt, means=[0, 0, 0, 0], stds=[1, 1, 1, 1]):
     dh = torch.log(gh / ph)
     deltas = torch.stack([dx, dy, dw, dh], dim=-1)
 
+    # print(means)
+    # print(stds)
     means = deltas.new_tensor(means).unsqueeze(0)
     stds = deltas.new_tensor(stds).unsqueeze(0)
     deltas = deltas.sub_(means).div_(stds)
