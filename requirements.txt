@@ -2,3 +2,5 @@
 -r requirements/optional.txt
 -r requirements/tests.txt
 -r requirements/build.txt
+
+scikit-learn~=0.21.3

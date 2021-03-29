@@ -1,6 +1,8 @@
 import mmcv
 import numpy as np
 import torch
+import cv2
+import pycocotools.mask as mask_util
 
 
 def bbox2delta(proposals, gt, means=[0, 0, 0, 0], stds=[1, 1, 1, 1]):
@@ -221,3 +223,57 @@ def distance2bbox(points, distance, max_shape=None):
         x2 = x2.clamp(min=0, max=max_shape[1] - 1)
         y2 = y2.clamp(min=0, max=max_shape[0] - 1)
     return torch.stack([x1, y1, x2, y2], -1)
+
+
+def bbox_mask2result(bboxes, coefs, labels, num_classes, img_meta, bases, method, mean=None, var=None):
+    """Convert detection results to a list of numpy arrays.
+
+    Args:
+        bboxes (Tensor): shape (n, 5)
+        coefs (Tensor): shape (n, num_bases)
+        labels (Tensor): shape (n, )
+        num_classes (int): class number, including background class
+
+    Returns:
+        list(ndarray): bbox results of each class
+    """
+    ori_shape = img_meta['ori_shape']
+    img_h, img_w, _ = ori_shape
+
+    mask_results = [[] for _ in range(num_classes - 1)]
+
+    if method == 'var':
+        coefs = coefs * var + mean
+    elif method == 'cosine_r':
+        coefs[:, 0] *= 30
+        coefs[:, 1] *= 10
+    masks = torch.mm(coefs, bases).cpu().numpy().reshape((-1, 64, 64))
+
+    for label, mask, bbox in zip(labels, masks, bboxes):
+        im_mask = np.zeros((img_h, img_w), dtype=np.uint8)
+
+        x1, y1, x2, y2, _ = (int(_x) for _x in bbox)
+        resized = cv2.resize(mask, (x2-x1+1, y2-y1+1))
+        if method == 'var':
+            resized = (resized > 127.5) * 255
+        elif method == 'cosine' or method == 'cosine_r':
+            resized = (resized > 0) * 255
+
+        im_mask[y1:y2+1, x1:x2+1] = resized.astype(np.uint8)
+
+        rle = mask_util.encode(
+            np.array(im_mask[:, :, np.newaxis], order='F'))[0]
+
+        mask_results[label].append(rle)
+
+    if bboxes.shape[0] == 0:
+        bbox_results = [
+            np.zeros((0, 5), dtype=np.float32) for i in range(num_classes - 1)
+        ]
+        return bbox_results, mask_results
+    else:
+        bboxes = bboxes.cpu().numpy()
+        labels = labels.cpu().numpy()
+        bbox_results = [bboxes[labels == i, :] for i in range(num_classes - 1)]
+        return bbox_results, mask_results
+

@@ -7,6 +7,7 @@ import time
 
 import mmcv
 import torch
+torch.multiprocessing.set_sharing_strategy('file_system')  # hot fix
 from mmcv import Config
 from mmcv.runner import init_dist
 
